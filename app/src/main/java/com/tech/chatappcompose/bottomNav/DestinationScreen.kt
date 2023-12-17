@@ -6,7 +6,7 @@ sealed class DestinationScreen(var routes: String){
     object Profile : DestinationScreen("profile")
     object ChatList : DestinationScreen("chatList")
     object SingleChat : DestinationScreen("singleChat/{chatId}"){
-        fun createRoutes(chatId : String) = "singlechat/$chatId"
+        fun createRoutes(chatId : String) = "singleChat/$chatId"
     }
     object StatusList : DestinationScreen("statusList")
     object SingleStatus : DestinationScreen("singleStatus/{userId}"){

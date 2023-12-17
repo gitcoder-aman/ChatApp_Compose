@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -30,9 +32,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.tech.chatappcompose.bottomNav.DestinationScreen
 import com.tech.chatappcompose.ui.theme.SkyColor
+import com.tech.chatappcompose.utils.CommonDivider
 import com.tech.chatappcompose.utils.CommonProgressBar
+import com.tech.chatappcompose.utils.CommonRow
 import com.tech.chatappcompose.utils.TitleText
+import com.tech.chatappcompose.utils.navigateTo
 import com.tech.chatappcompose.viewmodel.LCViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,7 +58,7 @@ fun ChatListScreen(navController: NavHostController, vm: LCViewModel) {
         val onFabClick: () -> Unit = { showDialog.value = true }
         val onDismiss: () -> Unit = { showDialog.value = false }
         val onAddChat: (String) -> Unit = {
-            vm.onAddChat(it,context)
+            vm.onAddChat(it, context)
             showDialog.value = false
         }
         Scaffold(
@@ -73,6 +79,7 @@ fun ChatListScreen(navController: NavHostController, vm: LCViewModel) {
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
                     TitleText(text = "Chats")
+                    CommonDivider()
                     if (chats.isEmpty()) {
                         Column(
                             modifier = Modifier
@@ -82,6 +89,27 @@ fun ChatListScreen(navController: NavHostController, vm: LCViewModel) {
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(text = "No Chats Available.")
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            items(chats) { chat ->
+                                val chatUser = if (chat.user1.userId == userData?.userId) {
+                                    chat.user2
+                                } else {
+                                    chat.user1
+                                }
+                                CommonRow(imageUrl = chatUser.imageUrl!!, name = chatUser.name!!) {
+                                    chat.chatId?.let {
+                                        navigateTo(
+                                            navController = navController,
+                                            route = DestinationScreen.SingleChat.createRoutes(chatId = it)
+                                        )
+                                    }
+                                }
+                                CommonDivider()
+                            }
                         }
                     }
                     BottomNavigationMenu(
@@ -112,19 +140,22 @@ fun FAB(
             addChatNumber.value = ""
         },
             confirmButton = {
-                Button(onClick = {
-                    onAddChat(addChatNumber.value)
-                }, colors = ButtonDefaults.buttonColors(
-                    contentColor = Color.White,
-                    containerColor = SkyColor
-                )) {
+                Button(
+                    onClick = {
+                        onAddChat(addChatNumber.value)
+                    }, colors = ButtonDefaults.buttonColors(
+                        contentColor = Color.White,
+                        containerColor = SkyColor
+                    )
+                ) {
                     Text(text = "Add Chat")
                 }
             }, title = { Text(text = "Add Chat") },
             text = {
-                OutlinedTextField(value = addChatNumber.value, onValueChange = {
-                    addChatNumber.value = it
-                }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                OutlinedTextField(
+                    value = addChatNumber.value, onValueChange = {
+                        addChatNumber.value = it
+                    }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = TextFieldDefaults.textFieldColors(
                         textColor = Color.Black,
                         selectionColors = TextSelectionColors(
@@ -132,7 +163,8 @@ fun FAB(
                             backgroundColor = SkyColor
                         ), cursorColor = SkyColor,
                         focusedIndicatorColor = SkyColor
-                    ))
+                    )
+                )
             }
         )
 
