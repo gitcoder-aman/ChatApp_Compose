@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.Filter
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.toObject
 import com.google.firebase.firestore.toObjects
 import com.google.firebase.storage.FirebaseStorage
@@ -17,10 +18,15 @@ import com.tech.chatappcompose.data.CHAT
 import com.tech.chatappcompose.data.ChatData
 import com.tech.chatappcompose.data.ChatUser
 import com.tech.chatappcompose.data.Event
+import com.tech.chatappcompose.data.MESSAGE
+import com.tech.chatappcompose.data.Message
+import com.tech.chatappcompose.data.STATUS
+import com.tech.chatappcompose.data.Status
 import com.tech.chatappcompose.data.USER_NODE
 import com.tech.chatappcompose.data.UserData
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.lang.Exception
+import java.util.Calendar
 import java.util.UUID
 import javax.inject.Inject
 
@@ -37,6 +43,11 @@ class LCViewModel @Inject constructor(
     var signIn = mutableStateOf(false)
     var userData = mutableStateOf<UserData?>(null)
     val chats = mutableStateOf<List<ChatData>>(listOf())
+    val chatMessages = mutableStateOf<List<Message>>(listOf())
+    private val inProgressChatMessage = mutableStateOf(false)
+    private var currentChatMessageListener: ListenerRegistration? = null
+    val status = mutableStateOf<List<Status>>(listOf())
+    val inProgressStatus = mutableStateOf(false)
 
     init {
         val currentUser = auth.currentUser
@@ -51,6 +62,8 @@ class LCViewModel @Inject constructor(
         auth.signOut()
         userData.value = null
         eventMutableState.value = Event("Logged Out")
+        depopulateMessage()
+        currentChatMessageListener = null
         Toast.makeText(context, "Logged Out", Toast.LENGTH_SHORT).show()
     }
 
@@ -90,12 +103,12 @@ class LCViewModel @Inject constructor(
             userId = uid!!,
             name = (name ?: userData.value?.name)!!,
             number = number ?: userData.value?.number!!,
-            imageUrl = (if(imageUrl!="") {
+            imageUrl = (if (imageUrl != "") {
                 imageUrl
-            }else{
-                if(userData.value?.imageUrl != null){
+            } else {
+                if (userData.value?.imageUrl != null) {
                     userData.value?.imageUrl
-                }else{
+                } else {
                     ""
                 }
             })!!
@@ -108,8 +121,8 @@ class LCViewModel @Inject constructor(
                     db.collection(USER_NODE).document(uid).set(userData)
                     getUserData(uid, context)
 
-                    if(chats.value.isNotEmpty())
-                    alsoUpdateChatDetail()
+                    if (chats.value.isNotEmpty())
+                        alsoUpdateChatDetail()
 
                     Toast.makeText(context, "Update Profile Data.", Toast.LENGTH_SHORT).show()
                 } else {
@@ -196,6 +209,7 @@ class LCViewModel @Inject constructor(
                 userData.value = user
                 inProgress.value = false
                 populateChats(context)
+                populateStatuses(context)
             }
         }
 
@@ -357,6 +371,97 @@ class LCViewModel @Inject constructor(
                     it.toObject<ChatData>()
                 }
                 inProgressChat.value = false
+            }
+        }
+    }
+
+    fun onSendReply(chatId: String, message: String) {
+        val time = Calendar.getInstance().time.toString()
+        val msg = Message(sendBy = userData.value?.userId, message = message, timeStamp = time)
+        db.collection(CHAT).document(chatId).collection(MESSAGE).document().set(msg)
+    }
+
+    fun populateMessage(chatId: String, context: Context) {
+        inProgressChatMessage.value = true
+        currentChatMessageListener =
+            db.collection(CHAT).document(chatId).collection(MESSAGE)
+                .addSnapshotListener { value, error ->
+                    if (error != null) {
+                        handleException(error, context = context)
+                    }
+                    if (value != null) {
+                        chatMessages.value = value.documents.mapNotNull {
+                            it.toObject<Message>()
+                        }.sortedBy { it.timeStamp }
+                        inProgressChatMessage.value = false
+                    }
+                }
+    }
+
+    fun depopulateMessage() {
+        chatMessages.value = listOf()
+        currentChatMessageListener = null
+    }
+
+    fun uploadStatus(uri: Uri?, context: Context) {
+        uploadImage(uri!!, context) {
+            createStatus(it.toString(), context)
+        }
+    }
+
+    private fun createStatus(imageUrl: String, context: Context) {
+        val newStatus = Status(
+            ChatUser(
+                userData.value?.userId,
+                userData.value?.name,
+                userData.value?.imageUrl,
+                userData.value?.number,
+            ), imageUrl,
+            System.currentTimeMillis()
+        )
+        db.collection(STATUS).document().set(newStatus).addOnSuccessListener {
+            Toast.makeText(context, "Status Upload Successfully", Toast.LENGTH_SHORT).show()
+        }.addOnFailureListener {
+            handleException(it, context = context)
+        }
+    }
+
+    private fun populateStatuses(context: Context?) {
+
+        val timeDelta = 24L * 60 * 60 * 1000
+        val cutOff = System.currentTimeMillis() - timeDelta
+
+        inProgressStatus.value = true
+        db.collection(CHAT).where(
+            Filter.or(
+                Filter.equalTo("user1.userId", userData.value?.userId),
+                Filter.equalTo("user2.userId", userData.value?.userId)
+            )
+        ).addSnapshotListener { value, error ->
+            if (error != null) {
+                handleException(error, context = context)
+            }
+            if (value != null) {
+                val currentConnections = arrayListOf(userData.value?.userId)
+
+                val chats = value.toObjects<ChatData>()
+                chats.forEach { chat ->
+                    if (chat.user1.userId == userData.value?.userId) {   //self
+                        currentConnections.add(chat.user2.userId)
+                    } else {
+                        currentConnections.add(chat.user1.userId)
+                    }
+                    db.collection(STATUS).whereGreaterThan("timeStamp",cutOff).whereIn("user.userId", currentConnections)
+                        .addSnapshotListener { value, error ->
+                            if(error!=null){
+                                handleException(error,context = context)
+                            }
+                            if(value!=null){
+                                status.value = value.toObjects()
+                                inProgressStatus.value = false
+                            }
+                        }
+                }
             }
         }
     }
